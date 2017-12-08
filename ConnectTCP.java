@@ -12,6 +12,7 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 
 public class ConnectTCP {
+	private boolean runing = true;
 	protected int[] ConnectList(Socket socket, ObjectInputStream oIn, ObjectOutputStream oOut) throws Exception {
 		int[] portList;
 		int t;
@@ -29,9 +30,13 @@ public class ConnectTCP {
 		} catch (Exception e) {
 			oOut.writeInt(-1);
 			oOut.flush();
+			runing = false;
 		}
 		return portList = new int[1];
 	}
+	public boolean runingStatus(){
+        return runing;
+        }
 	protected Socket makeTCP() throws IOException {
 		int portNo = 13370;
 		int counter = 0;
