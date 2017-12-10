@@ -21,6 +21,7 @@ public class CounterServer implements Runnable {
 	private boolean runing;
     private int counter = 0;
     private ConnectTCP ct = new ConnectTCP();
+    private int sum = 0;
     
     public static void main(String[] args) {
 		CounterServer counterServer = new CounterServer();
@@ -64,6 +65,7 @@ public class CounterServer implements Runnable {
             oOut.flush();
         }      
     }//setAndSend
+    /*
     public int getSum() {
         int sum = 0;
         synchronized (valueList) {
@@ -72,15 +74,15 @@ public class CounterServer implements Runnable {
             }
             return sum;
         }
-    }//getSum
+    }//getSum*/
     public int getBiggest() {
         synchronized (valueList) {
             return valueList.indexOf(Collections.max(valueList)) + 1;
         }
     }//getBiggest
-    public int getCount() {
+    /*public int getCount() {
         return counter;
-    }//getCount
+    }//getCount*/
     public class SocketSum extends Thread{
         private final int port;
 	    private final int addres;
@@ -108,20 +110,27 @@ public class CounterServer implements Runnable {
                 while (runing){
 
                     value = oIn.readInt();
-                    System.out.println("V:"+value+" S:"+addres);
+                    //System.out.println("V:"+value+" S:"+addres);
                     if(value==0){
+                        System.out.println(addres + " get value:"+value);
                         break;
                     }
                     tmp = valueList.get(addres);
-                    value += tmp;
-                    valueList.set(addres,value);
+                    //value += tmp;
+                    sum += value;
+                    valueList.set(addres,value+tmp);
                     counter++;
                 }
+                    System.out.println("Close soket:"+addres);
                     socket.close();
-                } catch (Exception e) {
-                    System.out.println(addres+" Broken ");
-                    e.printStackTrace();
-            }
+                } catch (IOException e) {
+                    //System.out.println(addres + " IOException");
+                    try {
+                        join(1000);
+                    } catch (InterruptedException ex) {
+                        System.out.println(addres + " Broken ");
+                    }
+                }
         }//run
     }//SocketSum
     private void asker(Socket socket, ObjectInputStream oIn, ObjectOutputStream oOut) throws IOException {
@@ -132,7 +141,8 @@ public class CounterServer implements Runnable {
 
 				case 0:
 
-					runing = false;
+                    runing = false;
+                    System.out.println(valueList.toString());
 					for (Thread saie : socketPortList) {
 						saie.join();
 					}
@@ -140,30 +150,31 @@ public class CounterServer implements Runnable {
 					break;
 
 				case 1:
-					System.out.println(valueList.toString());
-					System.out.println("Case:" + cases + "	answer:" + getSum());
-					oOut.writeInt(getSum());
+					//System.out.println(valueList.toString());
+					//System.out.println("Case:" + cases + "	answer:" + sum);
+					oOut.writeInt(sum);
 					oOut.flush();
 					break;
 
 				case 2:
-					System.out.println(valueList.toString());
-					System.out.println("Case:" + cases + " answer:" + getBiggest());
+					//System.out.println(valueList.toString());
+					//System.out.println("Case:" + cases + " answer:" + getBiggest());
 					oOut.writeInt(getBiggest());
 					oOut.flush();
 					break;
 
 				case 3:
 
-					System.out.println(valueList.toString());
-					System.out.println("Case:" + cases + " answer:" + getCount());
-					oOut.writeInt(getCount());
+					//System.out.println(valueList.toString());
+					//System.out.println("Case:" + cases + " answer:" + counter);
+					oOut.writeInt(counter);
 					oOut.flush();
 					break;
 
 				default:
 
-					runing = false;
+                    runing = false;
+                    System.out.println(valueList.toString());
 					System.out.println("Case:" + cases + " close...");
 					oOut.writeInt(-1);
 					oOut.flush();
