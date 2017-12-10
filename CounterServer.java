@@ -1,191 +1,270 @@
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InterruptedIOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.OutputStream;
-import java.net.DatagramPacket;
-import java.net.DatagramSocket;
-import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.rmi.ConnectException;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.net.SocketException;
+
+/**
+*@var int[] portList: Lista porteista, joita SocketSum kuuntelee
+*@var ArrayList<Integer> valueList: Lista portien arvoista jotka soketit saavat, jokisella portilla on omakohta listalla
+*@var ArrayList<Thread> socketPortList: Lista porteista jotka luodaan portListin mukaan.
+*@var int counter: Pitää listaa kuinkamonta kertaa soketti on saanut luvun käsiteltäväksi, poislukien arvon nolla.
+*@var ConnectTCP ct: Avustaja jolle on jaettu osa toteutuksesta.
+*
+*@implements Runnable
+*/
 
 public class CounterServer implements Runnable {
+
     private int[] portList;
-	private ArrayList<Integer> valueList = new ArrayList<Integer>();
-	private ArrayList<Thread> socketPortList = new ArrayList<Thread>();
-	private boolean runing;
+    private final ArrayList<Integer> valueList = new ArrayList<>();
+    private final ArrayList<Thread> socketPortList = new ArrayList<>();
+    private boolean running;
     private int counter = 0;
-    private ConnectTCP ct = new ConnectTCP();
-    private int sum = 0;
-    
+    private final ConnectTCP ct = new ConnectTCP();
+
     public static void main(String[] args) {
-		CounterServer counterServer = new CounterServer();
-		counterServer.run();
-	}
-
+        CounterServer counterServer = new CounterServer();
+        counterServer.run();
+    }
+    
+    /**
+    * UDP -vaihdon jälkeen aloitetaan TCP-yhteys ja luodaan sekä
+    * Input- ja OutputStreamit. 
+    * Boolean "running" voidaan testata pitääkö ohjelman vielä suorittaa, 
+    * jos palvelimelta Y saadaan "case 0", voidaan lopettaa suoritus.
+    */
+    
     public void run() {
-		Socket socket = new Socket();
-		ObjectOutputStream oOut = null;
-		ObjectInputStream oIn = null;
+        Socket socket = new Socket();
+        ObjectOutputStream oOut = null;
+        ObjectInputStream oIn = null;
 
-		try {
-			socket = ct.makeTCP();
-			System.out.println("My port: " + socket.getPort());
+        try {
+            socket = ct.makeTCP();
+            System.out.println("My port: " + socket.getPort());
 
-			OutputStream oS = socket.getOutputStream();
-			InputStream iS = socket.getInputStream();
-			oOut = new ObjectOutputStream(oS);
-			oIn = new ObjectInputStream(iS);
+            OutputStream oS = socket.getOutputStream();
+            InputStream iS = socket.getInputStream();
+            oOut = new ObjectOutputStream(oS);
+            oIn = new ObjectInputStream(iS);
 
             portList = ct.ConnectList(socket, oIn, oOut);
-            runing=ct.runingStatus();
-			setAndStart(socket, oOut);
-			runing = true;
-			while (runing) {
-				asker(socket, oIn, oOut);
+            running = ct.runningStatus();
+            setAndStart(socket, oOut);
+            running = true;
+            while (running) {
+                asker(socket, oIn, oOut);
             }
-			socket.close();
-		} catch (Exception e) {
-			e.printStackTrace();
+            socket.close();
+        } catch (Exception e) {
         }
     }//run
+    
+    /**
+    * Lisää "socketPortList"-taulukkoon uuden SocketSum-olion ja sille portin, sekä
+    * lisää sen "valueList"-ArrayListiin. Sen jälkeen kyseinen säie käynnistetään. 
+    * Alempi for-loop printtaa portListin tietoja.
+    * 
+    * @throws IOException
+    */
+
     public void setAndStart(Socket socket, ObjectOutputStream oOut) throws IOException {
+        
+        //Luonti ja lisäys listaan 
         for (int i = 0; i < portList.length; i++) {
             socketPortList.add(new SocketSum(i, portList[i]));
             valueList.add(i, 0);
+            //Käynnistys
             socketPortList.get(i).start();
         }
+        // Printataan portin tiedot portLististä.
         for (int k = 0; k < portList.length; k++) {
             oOut.writeInt(portList[k]);
             oOut.flush();
-        }      
+        }
     }//setAndSend
-    /*
+    
+    /**
+    * getSum(): Laskee jokaisen valueList listan soketin saamien summat yhteen ja paluttaa saadun tuloksen.
+    * getBiggest(): Antaa valueListan suurimman arvon ja plauttaa sen.
+    * getCount(): Palauttaa counter-arvon.
+    */
+    
+    /**
+    * @return sum
+    * @pre true
+    * @RESULT == (sum)
+    */
+    
     public int getSum() {
         int sum = 0;
         synchronized (valueList) {
             for (Integer i : valueList) {
-                sum += i;
+                sum = sum + i;
             }
             return sum;
         }
-    }//getSum*/
+    }//getSum
+    
+    /**
+    * @return valueList.indexOf(Collections.max(valueList)) + 1 
+    * @pre true
+    * @RESULT == (valueList.indexOf(Collections.max(valueList)) + 1)
+    */
+
     public int getBiggest() {
         synchronized (valueList) {
             return valueList.indexOf(Collections.max(valueList)) + 1;
         }
     }//getBiggest
-    /*public int getCount() {
+    
+    /**
+    * @return counter
+    * @pre true
+    * @RESULT == (counter)
+    */
+
+    public int getCount() {
         return counter;
-    }//getCount*/
-    public class SocketSum extends Thread{
+    }//getCount
+    
+		/**
+    * @var int port: arvo port saadaan alustuksessa.
+    * @var int address: arvo address saadaan alustuksessa.
+    * @var ServerSocket serverSocket: Oletettu ServerSocket joka luodaan saadun portin mukaan.
+    * @var boolean running: Pitää ohjlmaa päälä siihen asti kunnes sen arvo muuttu falseksi.
+    */
+    
+    public class SocketSum extends Thread {
+
         private final int port;
-	    private final int addres;
-        private int omaSum = 0;
+        private final int address;
         private ServerSocket serverSocket;
-        private boolean runing = true;
+        private boolean running = true;
         
-      public SocketSum(int addres, int port) throws IOException {
+				//Alustetaan SocketSum
+        public SocketSum(int address, int port) throws IOException {
             this.port = port;
-            this.addres = addres;
+            this.address = address;
         }//SocketSum
+				
+        //Luodaan serverSocket ja ryhdytään lukemaan int-arvoja "while"-loopissa.
         public void run() {
             try {
                 serverSocket = new ServerSocket(port);
                 serverSocket.setSoTimeout(5000);
                 Socket socket = serverSocket.accept();
-                System.out.println("Socket number:"+addres+" Connect port:"+port);
+                System.out.println("Socket number:" + address + " Connect port:" + port);
                 OutputStream oS = socket.getOutputStream();
                 InputStream iS = socket.getInputStream();
                 ObjectOutputStream oOn = new ObjectOutputStream(oS);
                 ObjectInputStream oIn = new ObjectInputStream(iS);
                 int value = 0;
-                int tmp = 0; 
+                int tmp = 0;
 
-                while (runing){
+                while (running) {
 
                     value = oIn.readInt();
-                    //System.out.println("V:"+value+" S:"+addres);
-                    if(value==0){
-                        System.out.println(addres + " get value:"+value);
+                    if (value == 0) {
                         break;
                     }
-                    tmp = valueList.get(addres);
-                    //value += tmp;
-                    sum += value;
-                    valueList.set(addres,value+tmp);
+                    tmp = valueList.get(address);
+                    value += tmp;
+                    valueList.set(address, value);
                     counter++;
                 }
-                    System.out.println("Close soket:"+addres);
-                    socket.close();
-                } catch (IOException e) {
-                    //System.out.println(addres + " IOException");
-                    try {
-                        join(1000);
-                    } catch (InterruptedException ex) {
-                        System.out.println(addres + " Broken ");
-                    }
+                socket.close();
+            } catch (IOException e) {
+                try {
+                    join(1000);
+                } catch (InterruptedException ex) {
+                    System.out.println(address + " Broken ");
                 }
+            }
         }//run
     }//SocketSum
+    
+    /**
+    * Suorittaa kyselyyn vastaamiseen. Vaatii toimiakseen socketin, 
+    * ObjectInputStream ja ObjectOutputStream.
+    *
+    * Palvelin Y voi kysyä askerilta kolmenlaista tietoa:
+    * Case 1: Tähän mennessä välitettyjen lukujen summma
+    * Case 2: Tähän mennessä sokettie suurinta arvoa.
+    * Case 3: Tähän mennessä kaikkien välitettyjen lukujen kokonaislukumäärä.
+    * Case 0: Saa tiedon, että Y on siirtänyt tarvittavat luvut.
+    * Default: Sammutta askerin jos saadaan muutakuin hyväksyty kysely arvo.
+    *
+    * Jos X vastaanottaa jonkun muun luvun kuin 1, 2, 3 tai 0, se vastaa Y:lle luvulla "-1".
+    *
+    * @throws IOException
+    */
+    
     private void asker(Socket socket, ObjectInputStream oIn, ObjectOutputStream oOut) throws IOException {
-		while (runing) {
-			int cases = oIn.readInt();
-			try {
-				switch (cases) {
+        while (running) {
+            //Kyselyä hoidetaan numero arvoilla 0 ja 3 väliltä.
+            int cases = oIn.readInt();
+            try {
+                switch (cases) {
 
-				case 0:
+                    //Sammutta askerin.
+                    case 0:
 
-                    runing = false;
-                    System.out.println(valueList.toString());
-					for (Thread saie : socketPortList) {
-						saie.join();
-					}
-					System.out.println("Case:" + cases + " close...");
-					break;
+                        running = false;
+                        for (Thread saie : socketPortList) {
+                            saie.join();
+                        }
+                        System.out.println("Case:" + cases + " DONE! Quitting...");
+                        oOut.flush();
+                        break;
 
-				case 1:
-					//System.out.println(valueList.toString());
-					//System.out.println("Case:" + cases + "	answer:" + sum);
-					oOut.writeInt(sum);
-					oOut.flush();
-					break;
+                    //Vastaa summaus kyselyyn
+                    case 1:
+                        System.out.println(valueList.toString());
+                        System.out.println("Case:" + cases + "	answer:" + getSum());
+                        oOut.writeInt(getSum());
+                        oOut.flush();
+                        break;
 
-				case 2:
-					//System.out.println(valueList.toString());
-					//System.out.println("Case:" + cases + " answer:" + getBiggest());
-					oOut.writeInt(getBiggest());
-					oOut.flush();
-					break;
+                    //Vastaa suurimman arvon kyselyyn
+                    case 2:
+                        System.out.println(valueList.toString());
+                        System.out.println("Case:" + cases + " answer:" + getBiggest());
+                        oOut.writeInt(getBiggest());
+                        oOut.flush();
+                        break;
+                        
+                    //Vastaa lukujen sen hetkisen kokonaismäärän
+                    case 3:
 
-				case 3:
+                        System.out.println(valueList.toString());
+                        System.out.println("Case:" + cases + " answer:" + getCount());
+                        oOut.writeInt(getCount());
+                        oOut.flush();
+                        break;
+                        
+                    //Oletus arvoinen toiminta, jos saadaan muu kuin hyväksytty kyselyn arvo.
+                    default:
 
-					//System.out.println(valueList.toString());
-					//System.out.println("Case:" + cases + " answer:" + counter);
-					oOut.writeInt(counter);
-					oOut.flush();
-					break;
+                        running = false;
+                        System.out.println("Case:" + cases + " close...");
+                        oOut.writeInt(-1);
+                        oOut.flush();
+                        break;
 
-				default:
+                }
 
-                    runing = false;
-                    System.out.println(valueList.toString());
-					System.out.println("Case:" + cases + " close...");
-					oOut.writeInt(-1);
-					oOut.flush();
-					break;
-
-				}
-
-			} catch (Exception e) {
-				e.toString();
-			}
-
+            } catch (IOException | InterruptedException e) {
+                e.toString();
+            }
         }
+        oOut.flush();
+        oOut.close();
+        oIn.close();
     }//asker
 }//CounterServer
